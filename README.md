@@ -28,3 +28,6 @@ Follow this steps to setup it on your machine.
 4. Make sure you have renamed your credentials as gmail_credentials.json and this file should be in the same directory where the all the files of gmail automation are present.
 5. Go to gmail_constants.py and change the constant "GMAIL_USER_ID" = youremail@example.com
 6. youremail@example.com is the same email through which credentials are created.
+7. Install all the dependencies and libraries in requirements.txt using pip install -r requirements.txt
+8. Run script.py
+9. Currently the script stores the data in a google sheet.You can find the url in GMAIL_SHEET_INFO in gmail_constants.py.You can change the url yo your google sheet but make sure you use worksheet names as in the google sheet url that is mentioned.
