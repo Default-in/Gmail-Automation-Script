@@ -3,6 +3,7 @@ from gmail_constants import *
 from utils import *
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
+import json
 from google_auth_oauthlib.flow import InstalledAppFlow
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -25,6 +26,50 @@ def get_labels(gmail_service):
     for label in label_res :
         label_list.append(label['name'])
     return label_list
+
+def get_message_from_id(gmail_service,msgid):
+    msg = None
+    try :
+        msg = gmail_service.users().messages().get(userId=GMAIL_USER_ID,id=msgid).execute()
+    except Exception as e :
+        error_message = f"Error occured in getting message from id : {e}"
+        print(error_message)
+    return msg
+
+def get_all_required_emails_messages(gmail_service,label=None,query=None):
+    if label is None : 
+        label = GMAIL_LABELS['inbox']
+    msgs = set()
+    try :
+        if query :
+            emails_results = gmail_service.users().messages().list(userId=GMAIL_USER_ID,labelIds=[label],q=query,maxResults=GMAIL_MAX_RESULTS).execute()
+        else:
+            emails_results = gmail_service.users().messages().list(userId=GMAIL_USER_ID,labelIds=[label],maxResults=GMAIL_MAX_RESULTS).execute()
+        emails_results_msgs = emails_results.get('messages',[])
+    except Exception as e :
+        error_message = f"Error occured in getting emails of label - {e}"
+        print(error_message)
+        return None
+    
+    while True:
+        for email in emails_results_msgs :
+            msgs.add(email['id'])        
+        if 'nextPageToken' in emails_results :
+            try :
+                if query :
+                    emails_results = gmail_service.users().messages().list(userId=GMAIL_USER_ID,labelIds=[label],q=query,maxResults=GMAIL_MAX_RESULTS,pageToken=emails_results['nextPageToken']).execute()     
+                else:                
+                    emails_results = gmail_service.users().messages().list(userId=GMAIL_USER_ID,labelIds=[label],maxResults=GMAIL_MAX_RESULTS,pageToken=emails_results['nextPageToken']).execute()
+                emails_results_msgs = emails_results.get('messages',[])
+                print(f"{len(emails_results_msgs)} more emails found in {label}")
+            except Exception as e :
+                error_message = f"Error occured in getting emails of label - {e}"
+                print(error_message)
+        else :
+            break
+    
+    msgs = list(msgs)
+    return msgs
 
 def get_email_ids_from_email_dict(email_dict,email_ids):
     try :
@@ -50,43 +95,13 @@ def get_email_ids_from_email_dict(email_dict,email_ids):
         print(error_message)
 
 def get_email_ids(gmail_service,label,email_ids_set,query=None):
-    before_len = len(email_ids_set)
-    try :
-        if query :
-            emails_results = gmail_service.users().messages().list(userId=GMAIL_USER_ID,labelIds=[label],q=query,maxResults=GMAIL_MAX_RESULTS).execute()
-        else:
-            emails_results = gmail_service.users().messages().list(userId=GMAIL_USER_ID,labelIds=[label],maxResults=GMAIL_MAX_RESULTS).execute()
-        emails_results_msgs = emails_results.get('messages',[])
-        print(f"{len(emails_results_msgs)} emails found in {label}")
-    except Exception as e :
-        error_message = f"Error occured in getting emails of label - {e}"
-        print(error_message)
-        return None
-    
-    while True:
-        for email in emails_results_msgs :
-            msg = None
-            try :
-                msg = gmail_service.users().messages().get(userId=GMAIL_USER_ID,id=email['id']).execute()
-            except Exception as e:
-                error_message = f"Error occured while fetching email with id {email['id']} - {e}"
-                print(error_message)
-                continue
+    msg_ids = get_all_required_emails_messages(gmail_service,label,query)
+
+    for msgid in msg_ids :
+        msg = get_message_from_id(gmail_service,msgid)
+        if msg :
             get_email_ids_from_email_dict(msg,email_ids_set)
-        
-        if 'nextPageToken' in emails_results :
-            try :
-                if query :
-                    emails_results = gmail_service.users().messages().list(userId=GMAIL_USER_ID,labelIds=[label],q=query,maxResults=GMAIL_MAX_RESULTS,pageToken=emails_results['nextPageToken']).execute()     
-                else:                
-                    emails_results = gmail_service.users().messages().list(userId=GMAIL_USER_ID,labelIds=[label],maxResults=GMAIL_MAX_RESULTS,pageToken=emails_results['nextPageToken']).execute()
-                emails_results_msgs = emails_results.get('messages',[])
-                print(f"{len(emails_results_msgs)} more emails found in {label}")
-            except Exception as e :
-                error_message = f"Error occured in getting emails of label - {e}"
-                print(error_message)
-        else :
-            break
+    
 
 def get_all_emails_from_gmail_acct(gmail_service):
     email_ids = set()
@@ -94,11 +109,10 @@ def get_all_emails_from_gmail_acct(gmail_service):
 
     for label in all_labels:
         get_email_ids(gmail_service,label,email_ids)
-        
+
     return email_ids
 
 
-    
 def get_email_ids_from_last_run():
     gmail_service = setup_gmail_api()
  
@@ -145,9 +159,64 @@ def get_email_ids_from_last_run():
         except Exception as e : 
             print(f"Error occured in all emails from gmail acct - {e}")
             
+
+def delete_all_emails_of_specific_gmail_id():
+    gmail_service = setup_gmail_api()
+    # TO DO -> Try to take this following target_id as input
+    target_id = GMAIL_TARGET_ID
+    query = f"from:{target_id}"
+    msg_ids_from_target = []
+    all_labels=get_labels(gmail_service)
+
+    for label in all_labels:
+        msg_ids_for_label = get_all_required_emails_messages(gmail_service,label,query)
+        msg_ids_from_target.extend(msg_ids_for_label)
+    unique_msg_ids = list(set(msg_ids_from_target))
+    
+    if len(unique_msg_ids)==0:
+        print(f"No emails found from {target_id}")
+        return
+
+    try:
+        res = gmail_service.users().messages().batchDelete(userId=GMAIL_USER_ID,body={'ids':unique_msg_ids}).execute()
+        print(f"Deleted {len(unique_msg_ids)} successfully")
+    except Exception as e: 
+        error_msg=f"Error occured while deleting emails from specific id - {e}"
+        print(error_msg)
+
+
+def extract_body_from_mail(message):
+    payload = message['payload']
+    parts = payload['parts']
+    text=""
+    for part in parts : 
+        if part['mimeType']=="text/plain":
+            body_text= part['body']['data']
+            decoded_text = decode_base_64_string(body_text)
+            decoded_text=decoded_text.decode()  # Convert bytes to string
+            text+=decoded_text
+    return text
+
+def get_all_messages_body_from_specific_gmail_id():
+    gmail_service = setup_gmail_api()
+    target_id = GMAIL_TARGET_ID
+    query = f"from:{target_id}"
+    messages_ids_from_target_id = get_all_required_emails_messages(gmail_service,GMAIL_LABELS['inbox'],query)
+
+    if len(messages_ids_from_target_id)==0:        
+        print(f"No emails found from {target_id}")
+        return
+
+    for msg_id in messages_ids_from_target_id :
+        msg = get_message_from_id(gmail_service,msg_id)
+        bodytext = extract_body_from_mail(msg)
+        new_data = [[target_id,bodytext]]
+        append_to_sheet(new_data,GMAIL_SHEET_INFO['sheet_url'],GMAIL_SHEET_INFO['email_body_worksheet'])        
+
+
+
 get_email_ids_from_last_run()
-
-
-
+delete_all_emails_of_specific_gmail_id()
+get_all_messages_body_from_specific_gmail_id()
 
 

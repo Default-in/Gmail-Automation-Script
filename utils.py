@@ -2,6 +2,13 @@ from gmail_constants import *
 from oauth2client.service_account import ServiceAccountCredentials
 import gspread
 import datetime
+import base64
+import os
+import json
+from googleapiclient.discovery import build
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
 
 
 def get_existing_emails_from_sheet():
@@ -11,7 +18,11 @@ def get_existing_emails_from_sheet():
     existing_email_list = existing_email_list[1:] # Remove header
     return existing_email_list
 
-    
+
+def write_to_json(dict_to_write):
+    with open('body.json','w') as fp:
+        json.dump(dict_to_write,fp)
+
 def append_to_sheet(data_to_write,sheet_url,worksheetname):
         client = gsheet_setup()
         worksheet = client.open_by_url(sheet_url).worksheet(worksheetname)
@@ -62,12 +73,15 @@ def update_date_in_sheet(change,row,col):
     worksheet.update_cell(row,col,change)
     
 def post_processing(email_ids,sheet_url,worksheet):
+    print(len(email_ids))
     existing_emails_in_sheet = set(get_existing_emails_from_sheet())
-    
+    print(len(existing_emails_in_sheet))
     new_emails = email_ids.difference(existing_emails_in_sheet) # Set difference 
        
     new_emails = list(new_emails)
     
+    print(len(new_emails))
+
     new_emails_list_of_list = []
     
     for email in new_emails :
@@ -97,3 +111,31 @@ def setup_gmail_api():
     except Exception as e : 
         message = f"Error occured while setting up gmail API - {e}"
         return None
+    
+def decode_base_64_string(ip):
+    # print(len(ip))
+    if '\n' in ip:
+        print("NEWLINE HAI BHAI")
+    # print(ip)
+    decoded = base64.b64decode(ip)
+    return decoded
+
+def is_base64(s):
+    padding_len = len(s)%4
+    print(padding_len)
+    s+=padding_len*'='
+    try:
+        base64.b64decode(s)
+        return True
+    except Exception as e:
+        print(e)
+        return False
+    
+def count_chars(ip):
+    mp = {}
+    for i in ip:
+        if i in mp:
+            mp[i]+=1
+        else :
+            mp[i]=1
+    print(mp)
