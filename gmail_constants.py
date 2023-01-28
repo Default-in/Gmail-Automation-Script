@@ -15,6 +15,7 @@ GMAIL_LABELS = {
     'sent':'SENT',
     'inbox':'INBOX'
 }
+GMAIL_LABELS_LIST = ['INBOX','SENT']
 GMAIL_MAX_RESULTS = 500 #As per Gmail API for now,might change in future
 GSHEET_SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/spreadsheets",
          "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"]

@@ -39,7 +39,6 @@ def get_message_from_id(gmail_service,msgid):
 def get_all_required_emails_messages(gmail_service,label=None,query=None):
     if label is None : 
         label = GMAIL_LABELS['inbox']
-    msgs = set()
     try :
         if query :
             emails_results = gmail_service.users().messages().list(userId=GMAIL_USER_ID,labelIds=[label],q=query,maxResults=GMAIL_MAX_RESULTS).execute()
@@ -52,9 +51,29 @@ def get_all_required_emails_messages(gmail_service,label=None,query=None):
         return None
     
     while True:
+        msgs = set()
         for email in emails_results_msgs :
             msgs.add(email['id'])        
-        if 'nextPageToken' in emails_results :
+        msgs_to_save_list = list(msgs)
+        emails_to_write = set()
+        print(f"Fetched {len(msgs_to_save_list)} emails for {label}.Now cleaning.This will take some time")
+        for msgid in msgs_to_save_list:
+            msg = get_message_from_id(gmail_service,msgid)
+            if msg :
+                emails_from_dict = email_ids_from_dict(msg)
+                emails_to_write.update(emails_from_dict)
+            time.sleep(0.5)
+        print(f"Completed cleaning.\nNow saving {len(emails_to_write)} email ids of {label}")
+        post_processing(emails_to_write,GMAIL_SHEET_INFO['sheet_url'],GMAIL_SHEET_INFO['email_ids_worksheet'])    
+        print(f"Saved {len(emails_to_write)} of {label}")
+        email_res_keys = list(emails_results.keys())
+
+        nextpage = False
+        for key in email_res_keys:
+            if key=='nextPageToken':
+                nextpage=True
+                break
+        if nextpage :
             try :
                 if query :
                     emails_results = gmail_service.users().messages().list(userId=GMAIL_USER_ID,labelIds=[label],q=query,maxResults=GMAIL_MAX_RESULTS,pageToken=emails_results['nextPageToken']).execute()     
@@ -67,50 +86,19 @@ def get_all_required_emails_messages(gmail_service,label=None,query=None):
                 print(error_message)
         else :
             break
-    
-    msgs = list(msgs)
-    return msgs
 
-def get_email_ids_from_email_dict(email_dict,email_ids):
-    try :
-        payload = email_dict['payload']
-        headers = payload['headers']
-                
-        for d in headers:                
-                if d['name']=="Bcc" or d['name']=="Cc" or d['name']=="From" or d['name']=='To':
-                    splitted_emails = d['value'].split(',') 
-                    
-                    for em in splitted_emails :
-                        # As per data observed,only 2 types of data is received for now
-                        
-                        # 1) Account name <emailid_associated> 2) email_id
-                        if '<' in em:
-                            email_id = seperate_email_id(em)
-                            if email_id :                                 
-                                email_ids.add(email_id)
-                        else :
-                            email_ids.add(em)
-    except Exception as e:
-        error_message = f"Error occured in getting email id from dictionary - {e}"
-        print(error_message)
-
-def get_email_ids(gmail_service,label,email_ids_set,query=None):
-    msg_ids = get_all_required_emails_messages(gmail_service,label,query)
-
-    for msgid in msg_ids :
-        msg = get_message_from_id(gmail_service,msgid)
-        if msg :
-            get_email_ids_from_email_dict(msg,email_ids_set)
-    
+def get_email_ids(gmail_service,label,query=None):
+    get_all_required_emails_messages(gmail_service,label,query) 
 
 def get_all_emails_from_gmail_acct(gmail_service):
-    email_ids = set()
+    print(f"Fetching all the labels")
     all_labels = get_labels(gmail_service)
-
+    print("All labels fetched")
+    # all_labels = GMAIL_LABELS_LIST
     for label in all_labels:
-        get_email_ids(gmail_service,label,email_ids)
-
-    return email_ids
+        print(f"Processing for {label}")
+        get_email_ids(gmail_service,label)
+        print(f"Done with {label}")
 
 
 def get_email_ids_from_last_run():
@@ -136,22 +124,18 @@ def get_email_ids_from_last_run():
             tomorrow_date_str = str(datetime.timedelta(days=1) + today_date)  
             tomorrow_date_str = extract_date(tomorrow_date_str)
             
-            email_ids = set()
             for email_type in GMAIL_EMAIL_TYPES:
                 # Date format in query string = YYYY/MM/DD 
                 query_string = f"in:{email_type} after:{last_run_date_str} before:{tomorrow_date_str}"
-                get_email_ids(gmail_service,GMAIL_LABELS[email_type],email_ids,query_string)
-            
+                get_email_ids(gmail_service,GMAIL_LABELS[email_type],query_string)            
             today_date = str(datetime.datetime.now())
             date_to_write = extract_date(today_date)
-            post_processing(email_ids,GMAIL_SHEET_INFO['sheet_url'],GMAIL_SHEET_INFO['email_ids_worksheet'])
             update_date_in_sheet(date_to_write,row,col+1)                                              
         except Exception as e :
             print(f"Error occured in last run - {e}")
     else :
         try :
-            email_ids = get_all_emails_from_gmail_acct(gmail_service)
-            post_processing(email_ids,GMAIL_SHEET_INFO['sheet_url'],GMAIL_SHEET_INFO['email_ids_worksheet'])
+            get_all_emails_from_gmail_acct(gmail_service)
             today_date = str(datetime.datetime.now())
             date_to_write = extract_date(today_date)
             rows_to_write = [[GMAIL_USER_ID,date_to_write]]
@@ -216,7 +200,7 @@ def get_all_messages_body_from_specific_gmail_id():
 
 
 get_email_ids_from_last_run()
-delete_all_emails_of_specific_gmail_id()
-get_all_messages_body_from_specific_gmail_id()
+# delete_all_emails_of_specific_gmail_id()
+# get_all_messages_body_from_specific_gmail_id()
 
 
