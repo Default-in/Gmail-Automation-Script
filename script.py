@@ -39,6 +39,8 @@ def get_message_from_id(gmail_service,msgid):
 def get_all_required_emails_messages(gmail_service,label=None,query=None):
     if label is None : 
         label = GMAIL_LABELS['inbox']
+    unique_email_ids = 0
+    emails_of_label = 0
     try :
         if query :
             emails_results = gmail_service.users().messages().list(userId=GMAIL_USER_ID,labelIds=[label],q=query,maxResults=GMAIL_MAX_RESULTS).execute()
@@ -55,17 +57,24 @@ def get_all_required_emails_messages(gmail_service,label=None,query=None):
         for email in emails_results_msgs :
             msgs.add(email['id'])        
         msgs_to_save_list = list(msgs)
+        emails_of_label+=len(msgs_to_save_list)
         emails_to_write = set()
         print(f"Fetched {len(msgs_to_save_list)} emails for {label}.Now cleaning.This will take some time")
+        cleaned_email_cnt = 0
         for msgid in msgs_to_save_list:
             msg = get_message_from_id(gmail_service,msgid)
             if msg :
                 emails_from_dict = email_ids_from_dict(msg)
                 emails_to_write.update(emails_from_dict)
-            time.sleep(0.5)
-        print(f"Completed cleaning.\nNow saving {len(emails_to_write)} email ids of {label}")
+                cleaned_email_cnt+=1
+            if cleaned_email_cnt==100:
+                print(f"{cleaned_email_cnt} emails cleaned of {label}")
+                cleaned_email_cnt=0
+            time.sleep(0.5) 
+        unique_email_ids+=len(emails_to_write)
+        print(f"Now saving unique {len(emails_to_write)} email ids of {label}")
         post_processing(emails_to_write,GMAIL_SHEET_INFO['sheet_url'],GMAIL_SHEET_INFO['email_ids_worksheet'])    
-        print(f"Saved {len(emails_to_write)} of {label}")
+        print(f"Saved {len(emails_to_write)} email ids of {label}")
         email_res_keys = list(emails_results.keys())
 
         nextpage = False
@@ -86,6 +95,8 @@ def get_all_required_emails_messages(gmail_service,label=None,query=None):
                 print(error_message)
         else :
             break
+    print(f"Found {emails_of_label} emails for {label}")
+    print(f"Extracted {unique_email_ids} from {label} emails")
 
 def get_email_ids(gmail_service,label,query=None):
     get_all_required_emails_messages(gmail_service,label,query) 
